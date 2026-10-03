@@ -1296,16 +1296,30 @@ body.editing .f-img-ops{display:flex}
   });
   const dots=[...dotsNav.children];
 
+  /* 当前幕侦测：记录每幕实时可见比例，始终取占屏面积最大的一幕
+     （不能"谁的回调后到谁赢"，否则高幕与下一幕在边缘重叠时会跳错） */
+  const vis=new Map();
+  let curFrame=-1;
   const fio=new IntersectionObserver(entries=>{
     entries.forEach(en=>{
-      if(en.isIntersecting){
-        const i=frames.indexOf(en.target);
-        frameLabel.textContent='FRAME '+pad(i+1)+' / '+pad(frames.length);
-        sceneLabel.textContent=en.target.dataset.label||'';
-        dots.forEach((d,j)=>d.classList.toggle('active',j===i));
+      if(en.isIntersecting) vis.set(en.target,en.intersectionRatio);
+      else vis.delete(en.target);
+    });
+    let best=null,bestRatio=-1,bestIndex=-1;
+    vis.forEach((ratio,target)=>{
+      const idx=frames.indexOf(target);
+      /* 面积更大者胜；面积相同（如各占一半）取文档顺序更靠上的 */
+      if(ratio>bestRatio+0.0001||(Math.abs(ratio-bestRatio)<=0.0001&&idx<bestIndex)){
+        best=target;bestRatio=ratio;bestIndex=idx;
       }
     });
-  },{threshold:.35});
+    if(best&&bestIndex!==curFrame){
+      curFrame=bestIndex;
+      frameLabel.textContent='FRAME '+pad(bestIndex+1)+' / '+pad(frames.length);
+      sceneLabel.textContent=best.dataset.label||'';
+      dots.forEach((d,j)=>d.classList.toggle('active',j===bestIndex));
+    }
+  },{threshold:[0,0.1,0.2,0.3,0.4,0.5,0.6,0.75,1]});
   frames.forEach(f=>fio.observe(f));
 
   /* 胶片进度条 */
@@ -1405,12 +1419,14 @@ body.editing .f-img-ops{display:flex}
     if(!editing && e.key==='ArrowRight') openFeature(fCur+1);
   });
 
-  /* 滑到实习幕：胶片栏像过片一样逐格展开；离开则收回 */
+  /* 滑到实习幕：胶片栏像过片一样逐格展开；离开则收回。
+     实习板块比视口高，不能用 threshold 比例（滑到下半屏会误判离开）；
+     改用收缩后的判定带：板块与屏幕中部 70% 区域相交即显示 */
   const expScene=document.getElementById('experience');
   if(expScene){
     const nio=new IntersectionObserver(entries=>{
       entries.forEach(en=>rail.classList.toggle('live',en.isIntersecting));
-    },{threshold:.25});
+    },{threshold:0,rootMargin:'-15% 0px -15% 0px'});
     nio.observe(expScene);
   }
 
